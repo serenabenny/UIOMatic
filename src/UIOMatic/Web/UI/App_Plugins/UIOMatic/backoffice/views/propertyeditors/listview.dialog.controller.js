@@ -1,41 +1,23 @@
 ﻿var app = angular.module("umbraco");
 
-angular.module("umbraco").controller("uioMatic.ObjectEditController",
-	function ($scope, $routeParams, $location, $timeout, uioMaticObjectResource, notificationsService, navigationService) {
-
+angular.module("umbraco").controller("UIOMatic.PropertyEditors.ListViewDialog",
+	function ($scope, $routeParams, $location, $timeout, uioMaticUtilityService, uioMaticObjectResource, notificationsService) {
 	    $scope.loaded = false;
 	    $scope.editing = false;
 
-	    var urlParts = $routeParams.id.split("?");
-	    var id = urlParts[0];
-	    var qs = {};
-
-	    if (urlParts.length > 1) {
-	        var vars = urlParts[1].split('&');
-	        for (var i = 0; i < vars.length; i++) {
-	            var pair = vars[i].split('=');
-	            qs[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1]);
-	        }
-	    }
-
-	    // If we have a ta querystring, it must be an edit 
-	    // and the first part of the URL must be the ID
-	    var hasId = !!qs["ta"];
+	    var id = $scope.dialogData.id;
+	    var hasId = id != -1;
 
 	    if (!hasId) {
-	        $scope.id = 0;
-	        $scope.typeAlias = id;
+            $scope.id = 0;
+            $scope.typeAlias = $scope.dialogData.typeAlias;
+
 	    } else {
 	        $scope.id = id;
-	        $scope.typeAlias = qs["ta"];
+	        $scope.typeAlias = $scope.dialogData.typeAlias;
+
 	    }
-
-	    $scope.queryString = qs;
-	    $scope.returnUrl = qs["returnUrl"] || "/uiomatic/uiomatic/list/" + $scope.typeAlias;
-	    $scope.fromList = !!qs["returnUrl"]; // Assumes a return URL means you've come from a list field view
-	    $scope.syncTree = !$scope.fromList; // Don't sync the tree if we are a nested type
-
-
+        
 	    uioMaticObjectResource.getTypeInfo($scope.typeAlias, true).then(function (response) {
 	        $scope.type = response;
 	        $scope.itemDisplayName = response.displayNameSingular;
@@ -54,20 +36,11 @@ angular.module("umbraco").controller("uioMatic.ObjectEditController",
 	        if ($scope.id > 0 && response.renderType == 0) // Tree view so append the node id
 	            $scope.path.push($scope.id);
 
-	        // Sync the tree
-	        if ($scope.syncTree) {
-	            navigationService.syncTree({ tree: 'uiomatic', path: $scope.path, forceReload: false, activate: true });
-	        }
 
 	        angular.forEach($scope.properties, function (value, key) {
 	            if (this.map(function (e) { return e.label; }).indexOf(value.tab) === -1) {
-	                if (value.tab == "") {
-	                    this.push({ id: 99, label: "General" });
-	                } else {
-	                    this.push({ id: value.tabOrder > 0 ? value.tabOrder : key, label: value.tab, active: $scope.queryString["tab"] === "tab" + value.tabOrder });
-	                }
+	                this.push({ id: 99, label: "General" });
 	            }
-
 	        }, tabsArr);
 
 	        if (tabsArr.length > 1) {
@@ -111,32 +84,40 @@ angular.module("umbraco").controller("uioMatic.ObjectEditController",
 	    $scope.save = function (object) {
 
 	        angular.forEach($scope.properties, function (property) {
+
+
 	            var key = property.key;
-	            var value = $scope.queryString[property.columnName] || property.value;
+	            var value =  property.value;
 	            $scope.object[key] = value;
+
 
 	        });
 
+	        //Setting nodeId on obj
+	        if ($scope.dialogData == "create") {
+	            $scope.object[$scope.dialogData.nodeIdSelected] = $scope.dialogData.currentNodeId;
+	        }
+	        
 	        uioMaticObjectResource.validate($scope.typeAlias, object).then(function (resp) {
 
 	            if (!hasId) {
 
 	                if (resp.length > 0) {
+
 	                    angular.forEach(resp, function (error) {
+
 	                        notificationsService.error("Failed to create " + $scope.itemDisplayName, error.ErrorMessage);
+
 	                    });
+
 	                } else {
+	                    
 	                    uioMaticObjectResource.create($scope.typeAlias, object).then(function (response) {
-	                        $scope.objectForm.$dirty = false;
-                            var redirectUrl = "/uiomatic/uiomatic/edit/" + response[$scope.type.primaryKeyColumnName] + "%3Fta=" + $scope.typeAlias;
-	                        for (var k in $scope.queryString) {
-	                            if ($scope.queryString.hasOwnProperty(k) && k != "ta") {
-	                                redirectUrl += "%26" + encodeURIComponent(k) + "=" + encodeURIComponent(encodeURIComponent($scope.queryString[k]));
-	                            }
-	                        };
-	                        $location.url(redirectUrl);
 	                        notificationsService.success("Success", $scope.itemDisplayName + " has been created");
+	                        $scope.submit(object);
+
 	                    });
+	                  
 	                }
 
 	            } else {
@@ -147,16 +128,12 @@ angular.module("umbraco").controller("uioMatic.ObjectEditController",
 	                    });
 	                } else {
 	                    uioMaticObjectResource.update($scope.typeAlias, object).then(function () {
-	                        $scope.objectForm.$dirty = false;
-
-	                        // Sync the tree
-	                        if ($scope.syncTree) {
-	                            navigationService.syncTree({ tree: 'uiomatic', path: $scope.path, forceReload: true, activate: true });
-	                        }
 	                        notificationsService.success("Success", $scope.itemDisplayName + " has been saved");
+	                        $scope.submit(object);
+
 	                    });
 	                }
-
+                    
 	            }
 
 
@@ -200,4 +177,4 @@ angular.module("umbraco").controller("uioMatic.ObjectEditController",
 	            return property.key != namePropertyKey;
 	        });
 	    }
-	});;
+	});
